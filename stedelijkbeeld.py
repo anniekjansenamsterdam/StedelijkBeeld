@@ -3,19 +3,16 @@ import os
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
-from weasyprint import HTML
-import pdfkit
+from docx import Document
+from docx.enum.section import WD_ORIENT
+from docx.shared import RGBColor
 
-WKHTMLTOPDF_PATH = r'C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe'
-config = pdfkit.configuration(wkhtmltopdf=WKHTMLTOPDF_PATH)
-
-WEEK = (datetime.today() - timedelta(days=7)).isocalendar()[1]
+# Data en output directories
 DATA_DIR = Path("data")
 OUTPUT_DIR = Path("output")
+WEEK = (datetime.today() - timedelta(days=7)).isocalendar()[1]
 
-# -------------------------------
-# Inloggen met users in secrets
-# -------------------------------
+st.set_page_config(page_title="THOR Stedelijk Informatiebeeld", layout="wide")
 
 def login():
     st.sidebar.title("🔐 Login")
@@ -34,12 +31,9 @@ if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
     login()
     st.stop()
 
-st.set_page_config(page_title="THOR Stedelijk Informatiebeeld", layout="wide")
-
 onderdelen = ["Overlast Personen", "Overlast Jeugd", "Afval"]
 stadsdelen = ["Centrum", "Noord", "Oost", "Zuid", "Zuidoost", "Weesp", "West", "Nieuw-West", "VOV"]
 
-st.set_page_config(page_title="Team IM Rapportage", layout="wide")
 st.title(f"Invoer Week {WEEK}")
 
 with st.form("invoer_form"):
@@ -58,47 +52,52 @@ with st.form("invoer_form"):
                 json.dump({"week": WEEK, "onderdeel": onderdeel, "stadsdeel": stadsdeel, "tekst": tekst}, f)
             st.success(f"Invoer opgeslagen voor {onderdeel} - {stadsdeel}.")
 
-st.header("Samenvatten en rapport genereren")
+if st.button("Genereer Word rapport"):
+    if not DATA_DIR.exists() or not any(DATA_DIR.glob(f"{WEEK}_*.json")):
+        st.warning("Geen invoer gevonden voor deze week.")
+    else:
+        doc = Document()
+        section = doc.sections[0]
+        section.orientation = WD_ORIENT.LANDSCAPE
+        new_width, new_height = section.page_height, section.page_width
+        section.page_width = new_width
+        section.page_height = new_height
 
-samenvattingen = {}
-all_entries = {}
+        # Titel toevoegen
+        doc.add_heading(f'Rapportage week {WEEK}', 0)
 
-if DATA_DIR.exists():
-    for file in DATA_DIR.glob(f"{WEEK}_*.json"):
-        with open(file, encoding="utf-8") as f:
-            entry = json.load(f)
-            key = (entry["onderdeel"], entry["stadsdeel"])
-            all_entries[key] = entry
+        # Gegevens laden en groeperen
+        data = {}
+        for file in DATA_DIR.glob(f"{WEEK}_*.json"):
+            with open(file, encoding="utf-8") as f:
+                entry = json.load(f)
+                data.setdefault(entry["onderdeel"], {})[entry["stadsdeel"]] = entry["tekst"]
 
-for key in sorted(all_entries.keys()):
-    onderdeel, stadsdeel = key
-    samenv = st.text_area(f"Samenvatting voor {onderdeel} - {stadsdeel}", key=f"sum_{onderdeel}_{stadsdeel}")
-    samenvattingen[key] = samenv
+        # Onderdelen in rood bold
+        for onderdeel in onderdelen:
+            heading = doc.add_heading(level=1)
+            run = heading.add_run(onderdeel)
+            run.bold = True
+            run.font.color.rgb = RGBColor(0xFF, 0x00, 0x00)  # rood
 
-if st.button("Genereer PDF"):
-    html = f"<h1>Week {WEEK} Rapportage</h1>"
+            stadsdeel_data = data.get(onderdeel, {})
+            for stadsdeel in stadsdelen:
+                heading2 = doc.add_heading(level=2)
+                run2 = heading2.add_run(stadsdeel)
+                run2.bold = True
+                run2.font.color.rgb = RGBColor(0x00, 0x00, 0x00)  # zwart
 
-    for onderdeel in onderdelen:
-        html += f"<h2>{onderdeel}</h2>"
-        for stadsdeel in stadsdelen:
-            key = (onderdeel, stadsdeel)
-            if key in all_entries:
-                sam = samenvattingen.get(key, "")
-                invoer_tekst = all_entries[key]['tekst'].replace('\n', '<br>')
-                sam_html = sam.replace('\n', '<br>') if sam else "<em>Geen samenvatting</em>"
-                html += f"""
-                <h3>{stadsdeel}</h3>
-                <strong>Samenvatting:</strong><p>{sam_html}</p>
-                <strong>Invoer:</strong><p>{invoer_tekst}</p>
-                """
+                tekst = stadsdeel_data.get(stadsdeel, "")
+                if tekst:
+                    for para in tekst.split('\n'):
+                        doc.add_paragraph(para)
+                else:
+                    doc.add_paragraph("Geen input.")
 
-    OUTPUT_DIR.mkdir(exist_ok=True)
-    pdf_path = OUTPUT_DIR / f"Week_{WEEK}_Rapport.pdf"
+        OUTPUT_DIR.mkdir(exist_ok=True)
+        output_path = OUTPUT_DIR / f"Week_{WEEK}_Rapport.docx"
+        doc.save(output_path)
 
-    try:
-        pdfkit.from_string(html, str(pdf_path), configuration=config)
-        st.success(f"PDF succesvol gegenereerd: {pdf_path}")
-        with open(pdf_path, "rb") as f:
-            st.download_button("Download PDF", data=f, file_name=pdf_path.name, mime="application/pdf")
-    except Exception as e:
-        st.error(f"Fout bij genereren PDF: {e}")
+        st.success(f"Word rapport gegenereerd: {output_path}")
+        with open(output_path, "rb") as f:
+            st.download_button("Download Word rapport", f, file_name=output_path.name)
