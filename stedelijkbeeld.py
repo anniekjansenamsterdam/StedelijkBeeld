@@ -1,11 +1,15 @@
 import streamlit as st
 import os
 import json
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from docx import Document
 from docx.enum.section import WD_ORIENT
 from docx.shared import RGBColor
+
+sys.path.append("C:\Users\jansen540\OneDrive - Gemeente Amsterdam\Documenten\GitHub\Login.py")
+from Login import require_login
 
 # Data en output directories
 DATA_DIR = Path("data")
@@ -14,42 +18,30 @@ WEEK = (datetime.today() - timedelta(days=7)).isocalendar()[1]
 
 st.set_page_config(page_title="THOR Stedelijk Informatiebeeld", layout="wide")
 
-def login():
-    st.sidebar.title("🔐 Login")
-    username = st.sidebar.text_input("Gebruikersnaam")
-    password = st.sidebar.text_input("Wachtwoord", type="password")
-    login_knop = st.sidebar.button("Inloggen")
+require_login()
 
-    if login_knop:
-        if username in st.secrets["users"] and st.secrets["users"][username] == password:
-            st.session_state["logged_in"] = True
-            st.session_state["user"] = username
-        else:
-            st.sidebar.error("Ongeldige gebruikersnaam of wachtwoord")
-
-if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
-    login()
-    st.stop()
-
-onderdelen = ["Overlast Personen", "Overlast Jeugd", "Afval"]
-stadsdelen = ["Centrum", "Noord", "Oost", "Zuid", "Zuidoost", "Weesp", "West", "Nieuw-West", "VOV"]
+stadsdelen = ["Centrum", "Noord", "Oost", "Zuid", "Zuidoost", "Weesp", "West", "Nieuw-West", "VOV", "Nautisch Toezicht"]
+onderdelen = ["Overlast personen", "Overlast jeugd", "Afval", "Parkeeroverlast/verkeersoverlast", "Overige reguliere taken"]
+nautisch = ["Incidenten", "Regulier Werk", "CityControl", "SIG-meldingen"]
 
 st.title(f"Invoer Week {WEEK}")
 
 with st.form("invoer_form"):
-    onderdeel = st.selectbox("Onderdeel", onderdelen)
     stadsdeel = st.selectbox("Stadsdeel", stadsdelen)
-    tekst = st.text_area("Invoer tekst", height=200)
+    teksten = {onderdeel: st.text_area(f"{onderdeel}", height=100) for onderdeel in onderdelen}
     submitted = st.form_submit_button("Opslaan")
 
     if submitted:
-        if tekst.strip() == "":
-            st.error("Tekst mag niet leeg zijn.")
-        else:
-            DATA_DIR.mkdir(exist_ok=True)
+        DATA_DIR.mkdir(exist_ok=True)
+        for onderdeel, tekst in teksten.items():
             filename = f"{WEEK}_{onderdeel}_{stadsdeel}.json".replace(" ", "_")
             with open(DATA_DIR / filename, "w", encoding="utf-8") as f:
-                json.dump({"week": WEEK, "onderdeel": onderdeel, "stadsdeel": stadsdeel, "tekst": tekst}, f)
+                json.dump({
+                    "week": WEEK,
+                    "onderdeel": onderdeel,
+                    "stadsdeel": stadsdeel,
+                    "tekst": tekst
+                }, f)
             st.success(f"Invoer opgeslagen voor {onderdeel} - {stadsdeel}.")
 
 if st.button("Genereer Word rapport"):
@@ -91,8 +83,8 @@ if st.button("Genereer Word rapport"):
                 if tekst:
                     for para in tekst.split('\n'):
                         doc.add_paragraph(para)
-                else:
-                    doc.add_paragraph("Geen input.")
+                # else:
+                #     doc.add_paragraph("Geen input.")
 
         OUTPUT_DIR.mkdir(exist_ok=True)
         output_path = OUTPUT_DIR / f"Week_{WEEK}_Rapport.docx"
