@@ -224,8 +224,9 @@ if st.button("Genereer Word rapport"):
         weekbeeld_run.font.name = 'Amsterdam Sans'
         weekbeeld_run.font.color.rgb = RGBColor(0x00, 0x00, 0x00)
 
+        date = datetime.now().strftime('%Y%m%d')
         OUTPUT_DIR.mkdir(exist_ok=True)
-        output_path = OUTPUT_DIR / f"{vandaag} THOR Stedelijk Informatiebeeld week {WEEK}.docx"
+        output_path = OUTPUT_DIR / f"{date} THOR Stedelijk Informatiebeeld week {WEEK}.docx"
         doc.save(output_path)
 
         st.success(f"Word rapport gegenereerd: {output_path}")
