@@ -6,8 +6,7 @@ from pathlib import Path
 from docx import Document
 from docx.enum.section import WD_ORIENT
 from docx.shared import RGBColor, Pt
-
-from Login import require_login
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 DATA_DIR = Path("data")
 OUTPUT_DIR = Path("output")
@@ -15,27 +14,35 @@ WEEK = (datetime.today() - timedelta(days=7)).isocalendar()[1]
 
 st.set_page_config(page_title="THOR Stedelijk Informatiebeeld", layout="wide")
 
-# require_login()
-
-stadsdelen = ["Centrum", "Noord", "Oost", "Zuid", "Zuidoost", "Weesp", "West", "Nieuw-West", "VOV", "Nautisch Toezicht"]
+stadsdelen = ["Algemeen beeld", "Centrum", "Noord", "Oost", "Zuid", "Zuidoost", "Weesp", "West", "Nieuw-West", "VOV", "Nautisch Toezicht"]
 onderdelen = ["Overlast personen", "Overlast jeugd", "Afval", "Parkeeroverlast/verkeersoverlast", "Overige reguliere taken"]
 nautisch = ["Incidenten", "Regulier Werk", "CityControl", "SIG-meldingen"]
 
-st.title(f"Invoer Week {WEEK}")
+st.title(f"Invoer Stedelijk Beeld Week {WEEK}")
 
-stadsdeel = st.selectbox("Stadsdeel", stadsdelen)
+def reset_text_fields():
+    """Reset de tekstvelden in de session state."""
+    for onderdeel in onderdelen + nautisch:
+        st.session_state[onderdeel] = ""
+
+# Controleer of de selectbox al een waarde heeft in de session state, zo niet, stel dan in op het eerste stadsdeel
+if 'stadsdeel' not in st.session_state:
+    st.session_state.stadsdeel = stadsdelen[0]
+
+# Voeg een on_change callback toe aan de selectbox om de tekstvelden te resetten bij wijziging
+stadsdeel = st.selectbox("Stadsdeel / Specialisme / Algemeen Beeld", stadsdelen, key="stadsdeel", on_change=reset_text_fields)
 
 with st.form("invoer_form"):
     teksten = {}
 
     if stadsdeel == "Nautisch Toezicht":
-        st.write("Invoer Nautisch Toezicht")
+        st.write("Nautisch Toezicht")
         for onderdeel in nautisch:
-            teksten[onderdeel] = st.text_area(f"{onderdeel}", height=100)
+            teksten[onderdeel] = st.text_area(f"{onderdeel}", height=100, key=onderdeel)
     else:
-        st.write(f"Invoer {stadsdeel}")
+        st.write(f"{stadsdeel}")
         for onderdeel in onderdelen:
-            teksten[onderdeel] = st.text_area(f"{onderdeel}", height=100)
+            teksten[onderdeel] = st.text_area(f"{onderdeel}", height=100, key=onderdeel)
 
     submitted = st.form_submit_button("Opslaan")
 
@@ -64,43 +71,59 @@ if st.button("Genereer Word rapport"):
         section.page_width = new_width
         section.page_height = new_height
 
-        # doc.add_heading(f'Rapportage week {WEEK}', 0)
-        
-        para = doc.add_paragraph()
-        run = para.add_run(f"Rapportage week {WEEK}")
+        # Titel gecentreerd
+        titel = doc.add_paragraph()
+        titel.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = titel.add_run(f"Stedelijk Beeld Week {WEEK}")
         run.bold = True
-        run.font.size = Pt(24)
+        run.font.size = Pt(32)
         run.font.color.rgb = RGBColor(0, 0, 0)
 
-        # Datum eronder in kleiner lettertype
-        datum_para = doc.add_paragraph()
-        datum_run = datum_para.add_run(datetime.now().strftime('%d-%m-%Y'))
-        datum_run.font.size = Pt(9)
-        datum_run.font.color.rgb = RGBColor(0, 0, 0)
+        ondertitel = doc.add_paragraph()
+        ondertitel.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        ondertitel_run = ondertitel.add_run("THOR Informatiemanagement")
+        ondertitel_run.font.size = Pt(20)
+        ondertitel_run.font.color.rgb = RGBColor(0, 0, 0)
 
-        # Dan een echte heading voor de inhoudsopgave (wel in TOC)
+        # Datum eronder gecentreerd en kleiner
+        datum = doc.add_paragraph()
+        datum.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        datum_run = datum.add_run(datetime.now().strftime('%d-%m-%Y'))
+        datum_run.font.size = Pt(20)
+        datum_run.font.color.rgb = RGBColor(0, 0, 0)
+        datum.paragraph_format.space_after = Pt(60)
+
+        # Inhoudsopgave
         inhoud = doc.add_heading(level=1)
         inhoud_run = inhoud.add_run("Inhoudsopgave")
+        inhoud.paragraph_format.space_after = Pt(12)
         inhoud_run.font.color.rgb = RGBColor(0, 0, 0)
         inhoudsopgave_lijst = onderdelen + ["Nautisch Toezicht"]
-        for item in inhoudsopgave_lijst:
-            para = doc.add_paragraph(item, style='List Bullet')
+        for i, item in enumerate(inhoudsopgave_lijst, start=1):
+            para = doc.add_paragraph(f"{i}. {item}")
+            para.style = 'Normal'
+            para.paragraph_format.left_indent = Pt(20)
 
         doc.add_page_break()
 
-        # Gegevens laden en groeperen
+        # Data laden
         data = {}
         for file in DATA_DIR.glob(f"{WEEK}_*.json"):
             with open(file, encoding="utf-8") as f:
                 entry = json.load(f)
                 data.setdefault(entry["onderdeel"], {})[entry["stadsdeel"]] = entry["tekst"]
 
-        # Eerst alle gewone onderdelen (zonder Nautisch Toezicht)
+        # Nummer teller starten
+        counter = 1
+
+        # Hoofdonderdelen met oplopend nummer
         for onderdeel in onderdelen:
             heading = doc.add_heading(level=1)
-            run = heading.add_run(onderdeel)
+            run = heading.add_run(f"{counter}. {onderdeel}")
             run.bold = True
-            run.font.color.rgb = RGBColor(0xFF, 0x00, 0x00)  # rood
+            run.font.color.rgb = RGBColor(0xFF, 0x00, 0x00)  #rood
+            
+            counter += 1
 
             stadsdeel_data = data.get(onderdeel, {})
             for stadsdeel in stadsdelen:
@@ -108,18 +131,23 @@ if st.button("Genereer Word rapport"):
                     heading2 = doc.add_heading(level=2)
                     run2 = heading2.add_run(stadsdeel)
                     run2.bold = True
-                    run2.font.color.rgb = RGBColor(0x00, 0x00, 0x00)  # zwart
-
+                    
+                    if stadsdeel == "Algemeen beeld":
+                        run2.font.color.rgb = RGBColor(0x00, 0x70, 0xC0) #blauw
+                    else:
+                        run2.font.color.rgb = RGBColor(0x00, 0x00, 0x00)  #zwart
                     tekst = stadsdeel_data.get(stadsdeel, "")
                     if tekst:
                         for para in tekst.split('\n'):
                             doc.add_paragraph(para)
+            doc.add_page_break()
 
-        # Nautisch Toezicht als laatste blok
+        # Nautisch Toezicht als laatste met nummer
         heading = doc.add_heading(level=1)
-        run = heading.add_run("Nautisch Toezicht")
+        run = heading.add_run(f"{counter}. Nautisch Toezicht")
         run.bold = True
         run.font.color.rgb = RGBColor(0xFF, 0x00, 0x00)  # rood
+        counter += 1
 
         for nautisch_onderdeel in nautisch:
             heading2 = doc.add_heading(level=2)
