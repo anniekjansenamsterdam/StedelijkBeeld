@@ -19,8 +19,8 @@ class Login:
             else:
                 st.sidebar.error("Ongeldige gebruikersnaam of wachtwoord")
     
-    def require_login():
-        if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
-            login = Login()
-            login.login()
-            st.stop()
+def require_login():
+    if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
+        login = Login()
+        login.login()
+        st.stop()
