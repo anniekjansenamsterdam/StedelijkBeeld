@@ -8,6 +8,10 @@ from docx.enum.section import WD_ORIENT
 from docx.shared import RGBColor, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
+from Login import require_login
+
+require_login()
+
 DATA_DIR = Path("data")
 OUTPUT_DIR = Path("output")
 WEEK = (datetime.today() - timedelta(days=7)).isocalendar()[1]
@@ -25,12 +29,44 @@ def reset_text_fields():
     for onderdeel in onderdelen + nautisch:
         st.session_state[onderdeel] = ""
 
-# Controleer of de selectbox al een waarde heeft in de session state, zo niet, stel dan in op het eerste stadsdeel
-if 'stadsdeel' not in st.session_state:
+def load_data_for_stadsdeel(stadsdeel):
+    """Laad eerder opgeslagen data in st.session_state voor het gekozen stadsdeel."""
+    # Eerst leegmaken
+    reset_text_fields()
+    
+    # Zoek bestanden voor de week en stadsdeel
+    for onderdeel in onderdelen + nautisch:
+        safe_onderdeel = re.sub(r"[\\/]", "_", onderdeel)
+        filename = f"{WEEK}_{safe_onderdeel}_{stadsdeel}.json".replace(" ", "_")
+        filepath = DATA_DIR / filename
+        if filepath.exists():
+            with open(filepath, encoding="utf-8") as f:
+                try:
+                    data = json.load(f)
+                    # Zet de tekst in session_state zodat het in de text_area verschijnt
+                    st.session_state[onderdeel] = data.get("tekst", "")
+                except json.JSONDecodeError:
+                    # Bestand corrupte of onjuist formaat, overslaan
+                    st.session_state[onderdeel] = ""
+
+# Initialiseer session_state voor stadsdeel
+if "stadsdeel" not in st.session_state:
     st.session_state.stadsdeel = stadsdelen[0]
 
-# Voeg een on_change callback toe aan de selectbox om de tekstvelden te resetten bij wijziging
-stadsdeel = st.selectbox("Stadsdeel / Specialisme / Algemeen Beeld", stadsdelen, key="stadsdeel", on_change=reset_text_fields)
+# Laad data telkens als stadsdeel verandert
+def on_stadsdeel_change():
+    load_data_for_stadsdeel(st.session_state.stadsdeel)
+
+stadsdeel = st.selectbox(
+    "Stadsdeel / Specialisme / Algemeen Beeld",
+    stadsdelen,
+    key="stadsdeel",
+    on_change=on_stadsdeel_change
+)
+
+# Laad data bij eerste keer openen
+if not any(st.session_state.get(onderdeel, None) for onderdeel in onderdelen + nautisch):
+    load_data_for_stadsdeel(stadsdeel)
 
 with st.form("invoer_form"):
     teksten = {}
@@ -49,7 +85,7 @@ with st.form("invoer_form"):
     if submitted:
         DATA_DIR.mkdir(exist_ok=True)
         for onderdeel, tekst in teksten.items():
-            safe_onderdeel = re.sub(r"[\\/]", "_", onderdeel)  # slash vervangen voor bestandsnaam
+            safe_onderdeel = re.sub(r"[\\/]", "_", onderdeel)
             filename = f"{WEEK}_{safe_onderdeel}_{stadsdeel}.json".replace(" ", "_")
             with open(DATA_DIR / filename, "w", encoding="utf-8") as f:
                 json.dump({
@@ -59,6 +95,10 @@ with st.form("invoer_form"):
                     "tekst": tekst
                 }, f)
         st.success(f"Invoer opgeslagen voor {stadsdeel}")
+
+# (rest van de code rapport generatie zoals jij die had)
+# ...
+
 
 if st.button("Genereer Word rapport"):
     if not DATA_DIR.exists() or not any(DATA_DIR.glob(f"{WEEK}_*.json")):
